@@ -28,7 +28,7 @@ jobs:
       # Step 4: Build project with custom base
       - name: Build project
         env:
-          VITE_BASE_URL: '/nama-repository/' # Ganti dengan nama repository Anda
+          VITE_BASE_URL: '/saio/' # Ganti dengan nama repository Anda
         run: npm run build
 
       # Step 5: Deploy to GitHub Pages
