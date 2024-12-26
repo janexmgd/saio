@@ -31,7 +31,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b gh-pages-config
+          git checkout -b gh-pages
           git add vite.config.js
           git commit -m "Update vite.config.js for GitHub Pages deployment"
           git push --force origin gh-pages
