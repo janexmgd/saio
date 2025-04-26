@@ -10,7 +10,6 @@ export default function MediaDownloader() {
   const [media, setMedia] = useState(null);
   const [data, setResponse] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [fetchProgress, setFetchProgress] = useState(0); // State untuk progress fetch
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [showJson, setShowJson] = useState(false);
 
@@ -24,7 +23,6 @@ export default function MediaDownloader() {
       if (!url) return;
 
       setIsLoading(true);
-      setFetchProgress(0); // Reset progress fetch saat memulai
       try {
         const { data } = await axios('https://saio-api.vercel.app/service', {
           method: 'POST',
@@ -34,12 +32,6 @@ export default function MediaDownloader() {
           data: JSON.stringify({
             url: url,
           }),
-          onDownloadProgress: (progressEvent) => {
-            const percentCompleted = Math.round(
-              (progressEvent.loaded * 100) / progressEvent.total
-            );
-            setFetchProgress(percentCompleted);
-          },
         });
         const videoData = data.data?.content?.video?.bitrateInfo;
 
@@ -134,17 +126,7 @@ export default function MediaDownloader() {
         </form>
 
         {isLoading ? (
-          <div className='text-center text-pink-500 mb-4'>
-            Fetching data... {fetchProgress > 0 && `(${fetchProgress}%)`}
-            {fetchProgress > 0 && (
-              <div className='w-full bg-gray-200 h-4 rounded-lg mt-2'>
-                <div
-                  className='bg-pink-500 h-full rounded-lg transition-all'
-                  style={{ width: `${fetchProgress}%` }}
-                ></div>
-              </div>
-            )}
-          </div>
+          <div className='text-center text-pink-500'>Loading...</div>
         ) : (
           <>
             {media && (
