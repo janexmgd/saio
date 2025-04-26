@@ -21,7 +21,7 @@ export default function MediaDownloader() {
     async (e) => {
       e.preventDefault();
       if (!url) return;
-
+      setUrl(url.trim());
       setIsLoading(true);
       try {
         const { data } = await axios('https://saio-api.vercel.app/service', {
