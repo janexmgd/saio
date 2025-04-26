@@ -1,49 +1,46 @@
 import { useState, useCallback } from 'react';
 import { Download } from 'lucide-react';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import axios from 'axios';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 
 export default function MediaDownloader() {
   const [url, setUrl] = useState('');
-  const [mediaType, setMediaType] = useState(null);
   const [media, setMedia] = useState(null);
-  const [data, setResponse] = useState(null);
+  const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  const [showJson, setShowJson] = useState(false);
+  const [downloadedBytes, setDownloadedBytes] = useState(0); // Menyimpan jumlah byte yang diunduh
+  const [errorMessage, setErrorMessage] = useState(''); // Menyimpan pesan error
 
-  const handleUrlChange = (e) => {
-    setUrl(e.target.value);
-  };
+  const handleUrlChange = (e) => setUrl(e.target.value);
 
   const handleSubmit = useCallback(
     async (e) => {
       e.preventDefault();
+      setDownloadedBytes(0);
+      setErrorMessage(''); // Reset error message
       if (!url) return;
-      setUrl(url.trim());
+
       setIsLoading(true);
       try {
-        const { data } = await axios('https://saio-api.vercel.app/service', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          data: JSON.stringify({
-            url: url,
-          }),
-        });
-        const videoData = data.data?.content?.video?.bitrateInfo;
+        const { data } = await axios.post(
+          'https://saio-api.vercel.app/service',
+          { url },
+          { headers: { 'Content-Type': 'application/json' } }
+        );
 
-        if (videoData?.length) {
-          setMedia(data.data.content.video.dynamicCover);
-        }
-
-        setMediaType(data.data.type);
-        setResponse(data);
+        setMedia(data.data?.content?.video?.dynamicCover);
+        setData(data);
       } catch (error) {
-        console.error('Fetch error:', error);
-        alert('Error fetching data: ' + error.message);
+        console.error('Error fetching data:', error);
+        if (error.response) {
+          // Jika ada response dari server, tampilkan errornya
+          setErrorMessage(
+            error.response.data.message || error.response.statusText
+          );
+        } else {
+          // Jika tidak ada response dari server, tampilkan pesan umum
+          setErrorMessage('Network or server issue');
+        }
       } finally {
         setIsLoading(false);
       }
@@ -52,35 +49,20 @@ export default function MediaDownloader() {
   );
 
   const handleDownload = async () => {
-    if (!media) return;
+    if (!media || !data) return;
 
-    let downloadUrl;
-    const cookie = data.data.cookie;
     const { playAddr } = data.data.content.video;
-    downloadUrl = playAddr;
-    if (!downloadUrl) {
-      throw new Error('URL tidak valid atau tidak ditemukan.');
-    }
-
     const filename = `${data.data.content.author.uniqueId}_${data.data.content.id}.mp4`;
 
     try {
       const response = await axios({
         url: 'https://saio-api.vercel.app/tunnel',
         method: 'POST',
-        data: {
-          url: downloadUrl,
-          cookie,
-        },
+        data: { url: playAddr, cookie: data.data.cookie },
         responseType: 'blob',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         onDownloadProgress: (progressEvent) => {
-          const percentCompleted = Math.round(
-            (progressEvent.loaded * 100) / progressEvent.total
-          );
-          setDownloadProgress(percentCompleted);
+          setDownloadedBytes(progressEvent.loaded);
         },
       });
 
@@ -93,7 +75,15 @@ export default function MediaDownloader() {
       link.remove();
     } catch (error) {
       console.error('Download error:', error);
-      alert('Error downloading media: ' + error.message);
+      if (error.response) {
+        // Jika ada response dari server, tampilkan errornya
+        setErrorMessage(
+          error.response.data.message || error.response.statusText
+        );
+      } else {
+        // Jika tidak ada response dari server, tampilkan pesan umum
+        setErrorMessage('Network or server issue');
+      }
     }
   };
 
@@ -132,22 +122,11 @@ export default function MediaDownloader() {
             {media && (
               <div className='mb-8'>
                 <div className='overflow-hidden mb-4 flex justify-center'>
-                  {mediaType === 'image' && (
-                    <img
-                      src={media}
-                      alt='TikTok Preview'
-                      className='max-h-[70vh] object-contain'
-                      onError={() => setMediaType(null)}
-                    />
-                  )}
-                  {mediaType === 'video' && (
-                    <img
-                      src={media}
-                      alt='TikTok Preview'
-                      className='max-h-[50vh] object-contain'
-                      onError={() => setMediaType(null)}
-                    />
-                  )}
+                  <img
+                    src={media}
+                    alt='TikTok Preview'
+                    className='max-h-[70vh] object-contain'
+                  />
                 </div>
                 <button
                   onClick={handleDownload}
@@ -157,63 +136,34 @@ export default function MediaDownloader() {
                   Download Media
                 </button>
 
-                {downloadProgress > 0 && (
+                {downloadedBytes > 0 && (
                   <div className='w-full bg-gray-200 h-4 rounded-lg mt-4'>
                     <div
                       className='bg-pink-500 h-full rounded-lg transition-all'
-                      style={{ width: `${downloadProgress}%` }}
+                      style={{
+                        width: `${(downloadedBytes / 1000000).toFixed(2)}MB`,
+                      }}
                     ></div>
+                    <p className='text-center mt-2'>{`Downloaded: ${downloadedBytes} bytes`}</p>
                   </div>
                 )}
               </div>
             )}
 
+            {/* Menampilkan JSON data */}
             {data && (
-              <div className='p-4'>
-                <button
-                  onClick={() => setShowJson(!showJson)}
-                  className='mb-2 text-pink-500 hover:underline'
-                >
-                  {showJson ? (
-                    <span className='text-red-300'>Hide data</span>
-                  ) : (
-                    <span className='text-green-300 text-xl'>Show data</span>
-                  )}
-                </button>
-                {showJson && data && (
-                  <div className='mt-6'>
-                    <h2 className='text-xl font-semibold mb-3 text-gray-900 dark:text-gray-100'>
-                      API data
-                    </h2>
-                    <div className='relative'>
-                      <div className='overflow-hidden border border-gray-200 dark:border-gray-700'>
-                        <SyntaxHighlighter
-                          language='json'
-                          style={atomDark}
-                          wrapLines={true}
-                          wrapLongLines={true}
-                          customStyle={{
-                            margin: 0,
-                            padding: '1.25rem',
-                            fontSize: '0.9rem',
-                            backgroundColor: '#1e1e1e',
-                            overflowX: 'auto',
-                            wordBreak: 'break-word',
-                            whiteSpace: 'pre-wrap',
-                          }}
-                          lineProps={{
-                            style: {
-                              wordBreak: 'break-word',
-                              whiteSpace: 'pre-wrap',
-                            },
-                          }}
-                        >
-                          {JSON.stringify(data, null, 2)}
-                        </SyntaxHighlighter>
-                      </div>
-                    </div>
-                  </div>
-                )}
+              <div className='mt-8'>
+                <h2 className='text-xl font-bold mb-4'>JSON Data:</h2>
+                <SyntaxHighlighter language='json'>
+                  {JSON.stringify(data, null, 2)}
+                </SyntaxHighlighter>
+              </div>
+            )}
+
+            {/* Menampilkan error message jika ada */}
+            {errorMessage && (
+              <div className='mt-8 text-red-500 bg-red-100 p-4 rounded-lg'>
+                <strong>Error:</strong> {errorMessage}
               </div>
             )}
           </>
