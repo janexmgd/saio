@@ -58,8 +58,17 @@ export default function App() {
       </div>
 
       <h1 className='text-3xl font-bold mb-6 text-center text-gray-900  dark:text-pink-400 transition-colors duration-300'>
-        Media Downloader
+        SAIO
       </h1>
+      <span className='text-gray-400 underline'>
+        <a
+          href='https://saio-api.vercel.app/api-docs'
+          target='_blank'
+          rel='noopener noreferrer'
+        >
+          api docs
+        </a>
+      </span>
 
       <MediaDownloader />
 

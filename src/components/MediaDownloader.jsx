@@ -7,8 +7,10 @@ import Slider from 'react-slick';
 import 'slick-carousel/slick/slick.css';
 import 'slick-carousel/slick/slick-theme.css';
 import ImageCarousel from './ImageCarousel.jsx';
+
 const BASE_URL = 'https://saio-api.vercel.app';
 // const BASE_URL = 'http://localhost:2999';
+
 const settings = {
   dots: true,
   infinite: true,
@@ -16,10 +18,21 @@ const settings = {
   slidesToShow: 1,
   slidesToScroll: 1,
 };
+
+// Fungsi untuk format ukuran file (Bytes → KB, MB, GB)
+const formatFileSize = (bytes) => {
+  if (bytes === 0 || !bytes) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
+};
+
 export default function MediaDownloader() {
   const [url, setUrl] = useState('');
   const [media, setMedia] = useState(null);
   const [data, setData] = useState(null);
+  const [fileSize, setFileSize] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [downloadedBytes, setDownloadedBytes] = useState(0);
   const [errorMessage, setErrorMessage] = useState('');
@@ -27,8 +40,12 @@ export default function MediaDownloader() {
   const [isDownload, setIsDownload] = useState(false);
   const [mediaType, setMediaType] = useState('');
 
+  const userAgent =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
+
   const handleUrlChange = (e) => setUrl(e.target.value);
-  const handleShowJson = (e) => setShowJson(!showJson);
+  const handleShowJson = () => setShowJson(!showJson);
+
   const handleSubmit = useCallback(
     async (e) => {
       e.preventDefault();
@@ -40,25 +57,27 @@ export default function MediaDownloader() {
         const { data } = await axios.post(
           `${BASE_URL}/service`,
           { url },
-          { headers: { 'Content-Type': 'application/json' } }
+          {
+            headers: {
+              'x-user-agent': userAgent,
+              Accept: '*',
+            },
+          }
         );
-        if (!data.data.service == 'tiktok') {
-          setErrorMessage('unsupported service');
+        if (data.data.service !== 'tiktok') {
+          setErrorMessage('Unsupported service');
+          return;
         }
         setMedia(data.data?.content?.video?.dynamicCover);
         setMediaType(data.data.type);
         setData(data);
-        console.log(data.data.type);
       } catch (error) {
         console.error('Error fetching data:', error);
-        if (error.response) {
-          setErrorMessage(
-            error.response.data.message || error.response.statusText
-          );
-        } else {
-          console.log(error);
-          setErrorMessage('Network or server issue');
-        }
+        setErrorMessage(
+          error.response?.data?.message ||
+            error.response?.statusText ||
+            'Network or server issue'
+        );
       } finally {
         setIsLoading(false);
       }
@@ -67,43 +86,56 @@ export default function MediaDownloader() {
   );
 
   const handleDownload = async () => {
-    if (!media || !data) return;
+    if (!media || !data || data.data.type !== 'video') return;
     setIsDownload(true);
+    setDownloadedBytes(0);
+    setFileSize(0);
 
     try {
-      if (data.data.service == 'tiktok') {
-        if (data.data.type == 'video') {
-          const { playAddr } = data.data.content.video;
-          const filename = `${data.data.content.author.uniqueId}_${data.data.content.id}.mp4`;
-          const response = await axios({
-            url: `${BASE_URL}/tunnel`,
-            method: 'POST',
-            data: { url: playAddr, cookie: data.data.cookie },
-            responseType: 'blob',
-            headers: { 'Content-Type': 'application/json' },
-            onDownloadProgress: (progressEvent) => {
-              setDownloadedBytes(progressEvent.loaded);
-            },
-          });
+      const { playAddr } = data.data.content.video;
+      const filename = `${data.data.content.author.uniqueId}_${data.data.content.id}.mp4`;
 
-          const urlBlob = window.URL.createObjectURL(new Blob([response.data]));
-          const link = document.createElement('a');
-          link.href = urlBlob;
-          link.setAttribute('download', filename);
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-        }
+      const response = await axios({
+        url: `${BASE_URL}/tunnel`,
+        method: 'POST',
+        data: { url: playAddr },
+        responseType: 'blob',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-cookie': data.data.cookie,
+          'x-user-agent': userAgent,
+        },
+        onDownloadProgress: (progressEvent) => {
+          setDownloadedBytes(progressEvent.loaded);
+          if (progressEvent.total) {
+            setFileSize(progressEvent.total);
+          }
+        },
+      });
+
+      // Fallback: Ambil ukuran file dari header jika tidak tersedia di progressEvent
+      if (!fileSize && response.headers['content-length']) {
+        setFileSize(parseInt(response.headers['content-length']));
       }
+
+      const blob = new Blob([response.data]);
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
     } catch (error) {
+      console.log(error);
+
       console.error('Download error:', error);
-      if (error.response) {
-        setErrorMessage(
-          error.response.data.message || error.response.statusText
-        );
-      } else {
-        setErrorMessage('Network or server issue');
-      }
+      setErrorMessage(
+        error.response?.data?.message ||
+          error.response?.statusText ||
+          'Download failed'
+      );
     } finally {
       setIsDownload(false);
     }
@@ -118,7 +150,7 @@ export default function MediaDownloader() {
         >
           <input
             type='url'
-            placeholder='Paste url here...'
+            placeholder='Paste URL here...'
             value={url}
             onChange={handleUrlChange}
             className='flex-1 px-4 py-3 border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-pink-100 focus:ring-2 focus:ring-pink-500 focus:border-transparent'
@@ -141,7 +173,7 @@ export default function MediaDownloader() {
           <div className='text-center text-pink-500'>Loading...</div>
         ) : (
           <>
-            {mediaType == 'video' && (
+            {mediaType === 'video' && (
               <div className='mb-4'>
                 <div className='overflow-hidden mb-4 flex justify-center gap-0.5'>
                   <img
@@ -158,13 +190,13 @@ export default function MediaDownloader() {
                     >
                       {JSON.stringify(
                         {
-                          author: data.data.content.author.uniqueId,
+                          author: data?.data?.content?.author?.uniqueId,
                           video: {
-                            id: data.data.content.video.id,
-                            createTime: data.data.content.createTime,
+                            id: data?.data?.content?.video?.id,
+                            createTime: data?.data?.content?.createTime,
                           },
-                          description: data.data.content.desc,
-                          stats: data.data.content.stats,
+                          description: data?.data?.content?.desc,
+                          stats: data?.data?.content?.stats,
                         },
                         null,
                         2
@@ -178,30 +210,35 @@ export default function MediaDownloader() {
                   disabled={isDownload}
                 >
                   <Download size={20} />
-                  {isDownload ? 'Waiting download' : 'Download'}
+                  {isDownload ? 'Downloading...' : 'Download'}
                 </button>
 
-                {downloadedBytes > 0 && (
-                  <p className='text-center mt-2 text-pink-400'>{`Total Downloaded: ${(
-                    downloadedBytes / 1000000
-                  ).toFixed(2)}MB`}</p>
+                {(downloadedBytes > 0 || fileSize > 0) && (
+                  <p className='text-center mt-2 text-pink-400'>
+                    {`Downloaded: ${formatFileSize(
+                      downloadedBytes
+                    )} / ${formatFileSize(fileSize)}`}
+                  </p>
                 )}
               </div>
             )}
-            {mediaType == 'image' && (
+
+            {mediaType === 'image' && (
               <div className='flex justify-center items-start gap-7 mb-9'>
                 <div className='w-1/2'>
-                  <Slider {...settings} className='max-w-full '>
-                    {data.data.content.imagePost.images.map((item, index) => (
-                      <ImageCarousel
-                        key={index}
-                        index={index}
-                        url={item.imageURL.urlList[0]}
-                        id={data.data.content.id}
-                        username={data.data.content.author.uniqueId}
-                        desc={data.data.content.desc}
-                      />
-                    ))}
+                  <Slider {...settings} className='max-w-full'>
+                    {data?.data?.content?.imagePost?.images?.map(
+                      (item, index) => (
+                        <ImageCarousel
+                          key={index}
+                          index={index}
+                          url={item.imageURL.urlList[0]}
+                          id={data.data.content.id}
+                          username={data.data.content.author.uniqueId}
+                          desc={data.data.content.desc}
+                        />
+                      )
+                    )}
                   </Slider>
                 </div>
                 <div className='w-1/2 overflow-auto flex'>
@@ -213,13 +250,13 @@ export default function MediaDownloader() {
                   >
                     {JSON.stringify(
                       {
-                        author: data.data.content.author.uniqueId,
+                        author: data?.data?.content?.author?.uniqueId,
                         video: {
-                          id: data.data.content.video.id,
-                          createTime: data.data.content.createTime,
+                          id: data?.data?.content?.video?.id,
+                          createTime: data?.data?.content?.createTime,
                         },
-                        description: data.data.content.desc,
-                        stats: data.data.content.stats,
+                        description: data?.data?.content?.desc,
+                        stats: data?.data?.content?.stats,
                       },
                       null,
                       2
@@ -229,18 +266,13 @@ export default function MediaDownloader() {
               </div>
             )}
 
-            {/* Menampilkan JSON Response */}
             {data && (
               <div className='mt-3 text-pink-400'>
-                {showJson ? (
-                  <button onClick={handleShowJson}>Hide Json Response</button>
-                ) : (
-                  <button onClick={handleShowJson} className='text-l'>
-                    Show Json Response
-                  </button>
-                )}
+                <button onClick={handleShowJson} className='text-l'>
+                  {showJson ? 'Hide JSON Response' : 'Show JSON Response'}
+                </button>
                 {showJson && (
-                  <div className='text-pink-400'>
+                  <div className='text-pink-400 mt-4'>
                     <h2 className='text-xl font-bold mb-4'>JSON Response:</h2>
                     <SyntaxHighlighter language='json' style={darcula}>
                       {JSON.stringify(data, null, 2)}
@@ -250,7 +282,6 @@ export default function MediaDownloader() {
               </div>
             )}
 
-            {/* Menampilkan error message jika ada */}
             {errorMessage && (
               <div className='mt-8 text-red-500 bg-red-100 p-4 rounded-lg'>
                 <strong>Error:</strong> {errorMessage}
